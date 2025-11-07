@@ -1,0 +1,11 @@
+services:
+  web:
+    image: ${IMAGE_REF}   # e.g., ghcr.io/OWNER/myapp:1.2.3
+    container_name: myapp
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    # Example place to mount config/logs if needed
+    # volumes:
+    #   - /var/myapp/logs:/var/log/nginx
+
