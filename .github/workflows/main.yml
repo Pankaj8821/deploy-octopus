@@ -85,6 +85,7 @@ jobs:
         with:
           project: ${{ env.OCTO_PROJECT }}
           environments: ${{ env.OCTO_ENVIRONMENT }}
+          release_number: ${{ steps.create_release.outputs.release_number }}
 
 
 
