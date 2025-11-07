@@ -57,16 +57,42 @@ jobs:
       - name: Install Octopus CLI
         uses: OctopusDeploy/install-octopus-cli-action@v3
 
+      # - name: Pack compose bundle
+      #   run: |
+      #     mkdir -p ./octopacks
+      #     octopus package zip create \
+      #       --id myapp.compose \
+      #       --version "${{ steps.meta.outputs.run_tag }}" \
+      #       --base-path . \
+      #       --include "docker-compose.yml" \
+      #       --include ".env.release" \
+      #       --out-folder ./octopacks
       - name: Pack compose bundle
         run: |
-          mkdir -p ./octopacks
+          set -euo pipefail
+          mkdir -p ./octopacks ./.releasebundle
+
+          # Find the compose file anywhere in the repo (yml/yaml, docker-compose/compose)
+          FILE="$(git ls-files | grep -E '(^|/)(docker-compose\.ya?ml|compose\.ya?ml)$' | head -n1 || true)"
+          if [ -z "$FILE" ]; then
+            echo "❌ No compose file found in repo. Ensure docker-compose.yml exists."
+            exit 1
+          fi
+          echo "✅ Found compose file: $FILE"
+
+          # Stage bundle at the package root
+          cp "$FILE" ./.releasebundle/docker-compose.yml
+          cp .env.release ./.releasebundle/.env.release
+
+          # Create the Octopus package from the staged folder
           octopus package zip create \
             --id myapp.compose \
             --version "${{ steps.meta.outputs.run_tag }}" \
-            --base-path . \
+            --base-path ./.releasebundle \
             --include "docker-compose.yml" \
             --include ".env.release" \
             --out-folder ./octopacks
+
 
       - name: Push package to Octopus
         uses: OctopusDeploy/push-package-action@v3
