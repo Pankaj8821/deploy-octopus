@@ -75,6 +75,7 @@ jobs:
           packages: ./octopacks/myapp.compose.${{ steps.meta.outputs.run_tag }}.zip
 
       - name: Create Octopus release
+        id: create_release 
         uses: OctopusDeploy/create-release-action@v3
         with:
           project: ${{ env.OCTO_PROJECT }}
