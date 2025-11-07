@@ -1,0 +1,86 @@
+name: CD via Octopus (Docker Hub)
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/myapp   # dockerhub repo
+  OCTOPUS_URL: ${{ secrets.OCTOPUS_URL }}
+  OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_KEY }}
+  OCTOPUS_SPACE: ${{ secrets.OCTOPUS_SPACE }} # omit if not using Spaces
+  OCTO_PROJECT: MyProject
+  OCTO_ENVIRONMENT: Production
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkoutb  
+        uses: actions/checkout@v4
+
+      # --- Build & Push to Docker Hub ---
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        run: |
+          SHA_TAG=${GITHUB_SHA::7}
+          RUN_TAG=${{ github.run_number }}.${{ github.run_attempt }}
+          echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
+          echo "run_tag=$RUN_TAG" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.run_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      # --- Hand off to Octopus: ship compose + .env (with IMAGE_REF) as a package ---
+      - name: Create .env for this release
+        run: |
+          echo "IMAGE_REF=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.run_tag }}" > .env.release
+
+      - name: Install Octopus CLI
+        uses: OctopusDeploy/install-octopus-cli-action@v3
+
+      - name: Pack compose bundle
+        run: |
+          octopus package zip create \
+            --id myapp.compose \
+            --version "${{ steps.meta.outputs.run_tag }}" \
+            --base-path . \
+            --include "docker-compose.yml" \
+            --include ".env.release" \
+            --out-folder ./octopacks
+
+      - name: Push package to Octopus
+        uses: OctopusDeploy/push-package-action@v3
+        with:
+          packages: ./octopacks/myapp.compose.${{ steps.meta.outputs.run_tag }}.zip
+
+      - name: Create Octopus release
+        uses: OctopusDeploy/create-release-action@v3
+        with:
+          project: ${{ env.OCTO_PROJECT }}
+          packages: myapp.compose:${{ steps.meta.outputs.run_tag }}
+
+      - name: Deploy to environment
+        uses: OctopusDeploy/deploy-release-action@v3
+        with:
+          project: ${{ env.OCTO_PROJECT }}
+          environments: ${{ env.OCTO_ENVIRONMENT }}
